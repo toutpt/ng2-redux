@@ -12,6 +12,7 @@ import {
 import { Observable } from 'rxjs/Observable';
 import { BehaviorSubject } from 'rxjs/BehaviorSubject';
 import 'rxjs/add/operator/map';
+import 'rxjs/add/operator/filter';
 import 'rxjs/add/operator/distinctUntilChanged';
 import { Injectable, ApplicationRef, Optional } from '@angular/core';
 import shallowEqual from '../utils/shallowEqual';
@@ -31,6 +32,7 @@ const checkSelector = (s) => VALID_SELECTORS.indexOf(typeof s, 0) >= 0 ||
 export class NgRedux<RootState> {
     private _store: Store<RootState>;
     private _store$: BehaviorSubject<RootState>;
+
     private _defaultMapStateToTarget: Function;
     private _defaultMapDispatchToTarget: Function;
 
@@ -43,8 +45,9 @@ export class NgRedux<RootState> {
      *  lets redux dev tools refresh the Angular 2 view when it changes
      *  the store.
      */
-    constructor(@Optional() private _applicationRef?: ApplicationRef) {
-      NgRedux.instance = this;
+    constructor( @Optional() private _applicationRef?: ApplicationRef) {
+        NgRedux.instance = this;
+        this._store$ = new BehaviorSubject(null);
     }
 
     /**
@@ -71,18 +74,18 @@ export class NgRedux<RootState> {
             = <Redux.StoreEnhancerStoreCreator<RootState>>compose(
                 applyMiddleware(...middleware),
                 ...enhancers
-                )(createStore);
+            )(createStore);
         const store = finalCreateStore(reducer, initState);
 
         this._store = store;
-        this._store$ = new BehaviorSubject(store.getState());
+        this._store$.next(store.getState());
         this._store.subscribe(() => {
             this._store$.next(this._store.getState());
 
             // For devTools support.
             if (this._applicationRef) {
                 this._applicationRef.tick();
-            }    
+            }
         });
 
         this._defaultMapStateToTarget = () => ({});
@@ -126,21 +129,22 @@ export class NgRedux<RootState> {
         comparer?: (x: any, y: any) => boolean): Observable<S> {
 
         invariant(checkSelector(selector), ERROR_MESSAGE, selector);
-
+        let store$ = this._store$.filter(n => n != null);
         if (
             typeof selector === 'string' ||
             typeof selector === 'number' ||
             typeof selector === 'symbol') {
-            return this._store$
+            return store$
                 .map(state => state[selector])
                 .distinctUntilChanged(comparer);
         } else if (Array.isArray(selector)) {
-            return this._store$
+            return store$
                 .map(state => getIn(state, selector))
                 .distinctUntilChanged(comparer);
         } else if (typeof selector === 'function') {
-            return this._store$
-                .map(selector).distinctUntilChanged(comparer);
+            return store$
+                .map(selector)
+                .distinctUntilChanged(comparer);
         }
     }
 

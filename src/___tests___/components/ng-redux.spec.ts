@@ -6,7 +6,8 @@ import { NgRedux } from '../../components/ng-redux';
 import { select } from '../../decorators/select';
 import * as sinon from 'sinon';
 import * as sinonChai from 'sinon-chai';
-
+import { Observable } from 'rxjs/Observable';
+import 'rxjs/add/operator/combineLatest';
 use(sinonChai);
 
 function returnPojo() {
@@ -130,7 +131,7 @@ describe('NgRedux Observable Store', () => {
     bar: string;
     baz: number;
   };
-  
+
   let connector;
   let targetObj;
   let defaultState;
@@ -288,5 +289,53 @@ describe('NgRedux Observable Store', () => {
       expect(mockAppRef.tick).to.have.been.calledOnce;
     });
 
-});
+  it('should wait until store is configured before emitting values',
+    () => {
+      class SomeService {
+        foo: string;
+        bar: string;
+        baz: number;
 
+        constructor(private _ngRedux: NgRedux<any>) {
+          _ngRedux.select(n => n.foo).subscribe(foo => this.foo = foo);
+          _ngRedux.select(n => n.bar).subscribe(bar => this.bar = bar);
+          _ngRedux.select(n => n.baz).subscribe(baz => this.baz = baz);
+        }
+      }
+      ngRedux = new NgRedux<IAppState>(mockAppRef);
+
+      let someService = new SomeService(ngRedux);
+      ngRedux.configureStore(rootReducer, defaultState);
+      expect(someService.foo).to.be.equal('bar');
+      expect(someService.bar).to.be.equal('foo');
+      expect(someService.baz).to.be.equal(-1);
+
+    });
+
+  it('should have select decorators work before store is configured',
+    (done) => {
+      class SomeService {
+        @select() foo$: any;
+        @select() bar$: any;
+        @select() baz$: any;
+
+      }
+      ngRedux = new NgRedux<IAppState>(mockAppRef);
+
+      let someService = new SomeService();
+      someService
+        .foo$
+        .combineLatest(someService.bar$, someService.baz$)
+        .subscribe(([foo, bar, baz]) => {
+          expect(foo).to.be.equal('bar');
+          expect(bar).to.be.equal('foo');
+          expect(baz).to.be.equal(-1);
+          done();
+        });
+
+      ngRedux.configureStore(rootReducer, defaultState);
+
+    });
+
+
+});
